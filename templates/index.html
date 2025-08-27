@@ -2,60 +2,131 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <title>AI Chatbot</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chatbot Professionale</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="./static/style.css">
 </head>
 <body>
 
     <!-- Icona flottante -->
-    <div id="chat-icon" onclick="toggleChat()">
-        <img src="/static/robot.png" alt="AI Chat" />
+    <div id="chat-icon">
+        <i class="fas fa-robot"></i>
+        <div class="notification-badge">1</div>
     </div>
 
     <!-- Finestra chat -->
     <div id="chat-window">
         <div class="chat-header">
-            <span>AI Chatbot</span>
-            <button class="close-btn" onclick="toggleChat()">✖</button>
+            <div class="title">
+                <i class="fas fa-robot"></i>
+                <span>AI Assistant</span>
+            </div>
+            <div class="chat-actions">
+                <button title="Cronologia chat"><i class="fas fa-history"></i></button>
+                <button title="Impostazioni"><i class="fas fa-cog"></i></button>
+                <button class="close-btn" title="Chiudi chat"><i class="fas fa-times"></i></button>
+            </div>
         </div>
         <div class="chat-box">
-            <div class="message ai">Ciao! Scrivimi qualcosa...</div>
+            <div class="welcome-message">
+                <h4>Benvenuto!</h4>
+                <p>Sono il tuo assistente virtuale, pronto ad aiutarti con le tue domande.</p>
+            </div>
+            <div class="message ai">Ciao! Come posso aiutarti oggi?<span class="message-time">12:45</span></div>
+        </div>
+        <div class="typing-indicator">
+            <span></span>
+            <span></span>
+            <span></span>
         </div>
         <div class="chat-form">
             <input type="text" id="user-input" placeholder="Scrivi un messaggio..." />
-            <button type="button" onclick="sendMessage()">Invia</button>
+            <button type="button" id="send-button">
+                <i class="fas fa-paper-plane"></i>
+            </button>
         </div>
     </div>
 
     <script>
+        const chatIcon = document.getElementById("chat-icon");
         const chatWindow = document.getElementById("chat-window");
+        const userInput = document.getElementById("user-input");
+        const sendButton = document.getElementById("send-button");
+        const chatBox = document.querySelector(".chat-box");
+        const typingIndicator = document.querySelector(".typing-indicator");
+
+        // Apri/chiudi chat
+        chatIcon.addEventListener('click', toggleChat);
+        document.querySelector('.close-btn').addEventListener('click', toggleChat);
 
         function toggleChat() {
             chatWindow.classList.toggle("visible");
+            // Rimuovi il badge di notifica quando si apre la chat
+            if (chatWindow.classList.contains("visible")) {
+                document.querySelector('.notification-badge').style.display = 'none';
+            }
         }
+
+        // Invia messaggio con click sul pulsante
+        sendButton.addEventListener('click', sendMessage);
+
+        // Invia messaggio con il tasto Invio
+        userInput.addEventListener('keypress', function(e) {
+            if(e.key === 'Enter') {
+                sendMessage();
+            }
+        });
 
         function sendMessage() {
-            const input = document.getElementById("user-input");
-            const text = input.value.trim();
+            const text = userInput.value.trim();
             if(text === "") return;
 
-            const chatBox = document.querySelector(".chat-box");
+            // Aggiungi messaggio utente
+            addMessage(text, 'user');
+            userInput.value = "";
+            
+            // Simula risposta AI
+            showTypingIndicator();
+            
+            setTimeout(() => {
+                hideTypingIndicator();
+                const responses = [
+                    "Grazie per il tuo messaggio! Come posso assisterti?",
+                    "Interessante! Dimmi di più su ciò che ti serve.",
+                    "Ho capito. Posso aiutarti con informazioni specifiche?",
+                    "Sto elaborando la tua richiesta...",
+                    "Posso cercare maggiori informazioni su questo argomento se vuoi."
+                ];
+                const randomResponse = responses[Math.floor(Math.random() * responses.length)];
+                addMessage(randomResponse, 'ai');
+            }, 1500);
+        }
 
-            // messaggio utente
-            const userMsg = document.createElement("div");
-            userMsg.className = "message user";
-            userMsg.textContent = text;
-            chatBox.appendChild(userMsg);
-
-            // messaggio AI (mock)
-            const aiMsg = document.createElement("div");
-            aiMsg.className = "message ai";
-            aiMsg.textContent = "AI: Sto pensando...";
-            chatBox.appendChild(aiMsg);
-
-            input.value = "";
+        function addMessage(text, sender) {
+            const messageElement = document.createElement("div");
+            messageElement.className = `message ${sender}`;
+            
+            // Aggiungi orario corrente
+            const now = new Date();
+            const time = now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0');
+            
+            messageElement.innerHTML = `${text}<span class="message-time">${time}</span>`;
+            chatBox.appendChild(messageElement);
+            
+            // Scroll to bottom
             chatBox.scrollTop = chatBox.scrollHeight;
         }
+
+        function showTypingIndicator() {
+            typingIndicator.style.display = 'block';
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function hideTypingIndicator() {
+            typingIndicator.style.display = 'none';
+        }
     </script>
+
 </body>
 </html>
