@@ -1,22 +1,31 @@
-from fastapi import FastAPI, Request, Form
+from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-#FastAPI → il framework web.
-#Request → oggetto che rappresenta la richiesta HTTP.
-app = FastAPI() #creo istanza 
+import socket
 
-# cartelle statiche e template
-app.mount("/static", StaticFiles(directory="static"), name="static") #indico dove si trovano i file css statici
-templates = Jinja2Templates(directory="templates") #indico file html della page 
+app = FastAPI()
 
-#Quando visiti http://localhost:8000/ con un GET, viene caricata la pagina index.html.
-# pagina iniziale con il form
+# Monta la cartella static per servire CSS, JS, immagini
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request): #all'arrivo della get su 8000/ viene eseguita operazione di home
-    return templates.TemplateResponse("index.html", {"request": request, "result": None})
+def home():
+    # Legge il file HTML
+    with open("templates/index.html", "r", encoding="utf-8") as file:
+        return file.read()
 
-# ricezione della stringa dal form
 @app.post("/echo", response_class=HTMLResponse)
-def echo_string(request: Request, text: str = Form(...)):
-    return templates.TemplateResponse("index.html", {"request": request, "result": text})
+def echo(text_input: str = Form(...)):
+    HOST = '127.0.0.1'
+    PORT = 65432
+    
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.connect((HOST, PORT))
+        s.sendall(text_input.encode())
+        data = s.recv(1024)
+    
+    return data.decode()  # Riceve già il testo in maiuscolo
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
