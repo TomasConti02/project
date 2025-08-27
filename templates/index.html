@@ -1,19 +1,61 @@
 <!DOCTYPE html>
-<html>
+<html lang="it">
 <head>
-    <title>Echo App</title>
+    <meta charset="UTF-8">
+    <title>AI Chatbot</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <h1>Inserisci una stringa</h1>
-    <form action="/echo" method="post">
-        <input type="text" name="text" placeholder="Scrivi qualcosa..." required>
-        <button type="submit">Invia</button>
-    </form>
 
-    {% if result %}
-        <h2>Hai scritto:</h2>
-        <p><strong>{{ result }}</strong></p>
-    {% endif %}
+    <!-- Icona flottante -->
+    <div id="chat-icon" onclick="toggleChat()">
+        <img src="/static/robot.png" alt="AI Chat" />
+    </div>
+
+    <!-- Finestra chat -->
+    <div id="chat-window">
+        <div class="chat-header">
+            <span>AI Chatbot</span>
+            <button class="close-btn" onclick="toggleChat()">✖</button>
+        </div>
+        <div class="chat-box">
+            <div class="message ai">Ciao! Scrivimi qualcosa...</div>
+        </div>
+        <div class="chat-form">
+            <input type="text" id="user-input" placeholder="Scrivi un messaggio..." />
+            <button type="button" onclick="sendMessage()">Invia</button>
+        </div>
+    </div>
+
+    <script>
+        const chatWindow = document.getElementById("chat-window");
+
+        function toggleChat() {
+            chatWindow.classList.toggle("visible");
+        }
+
+        function sendMessage() {
+            const input = document.getElementById("user-input");
+            const text = input.value.trim();
+            if(text === "") return;
+
+            const chatBox = document.querySelector(".chat-box");
+
+            // messaggio utente
+            const userMsg = document.createElement("div");
+            userMsg.className = "message user";
+            userMsg.textContent = text;
+            chatBox.appendChild(userMsg);
+
+            // messaggio AI (mock)
+            const aiMsg = document.createElement("div");
+            aiMsg.className = "message ai";
+            aiMsg.textContent = "AI: Sto pensando...";
+            chatBox.appendChild(aiMsg);
+
+            input.value = "";
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+    </script>
 </body>
 </html>
