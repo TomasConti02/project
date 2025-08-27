@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Echo App</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>Inserisci una stringa</h1>
+    <form action="/echo" method="post">
+        <input type="text" name="text" placeholder="Scrivi qualcosa..." required>
+        <button type="submit">Invia</button>
+    </form>
+
+    {% if result %}
+        <h2>Hai scritto:</h2>
+        <p><strong>{{ result }}</strong></p>
+    {% endif %}
+</body>
+</html>
