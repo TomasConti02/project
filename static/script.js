@@ -53,7 +53,6 @@ async function sendMessage() {
             hideTypingIndicator();
             addMessage("Errore: impossibile elaborare la richiesta", 'ai');
         }
-        
     } catch (error) {
         hideTypingIndicator();
         addMessage("Errore: impossibile connettersi al server", 'ai');
@@ -68,10 +67,9 @@ function addMessage(text, sender) {
     // Aggiungi orario corrente
     const now = new Date();
     const time = now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0');
-    
     messageElement.innerHTML = `${text}<span class="message-time">${time}</span>`;
-    chatBox.appendChild(messageElement);
     
+    chatBox.appendChild(messageElement);
     // Scroll to bottom con animazione smooth
     chatBox.scrollTop = chatBox.scrollHeight;
 }
