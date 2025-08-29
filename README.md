@@ -12,11 +12,15 @@ Assicurarsi di avere installato:
 
 - [Ollama Server](https://ollama.com/download/)
 - Python 3.x
+- GPU Nvidia + CUDA or Google colab Tesla T4 runtime
 ---
+## Requisiti
+esecuzione codice TuningCode.py per adestrare il modello 
+scaricare la dir di salvataggio
+
 ## Setup del modello Ollama
-1. Scaricare il file `ProjectModelTest.zip`.à
-2. Estrarlo per ottenere il file del modello.
-3. Creare il modello Ollama con il comando:  
+1. All'interno della dir di addestramento
+2. Creare il modello Ollama con il comando:  
    ```bash
    ollama create ModelTest -f Modelfile
   
