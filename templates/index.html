@@ -1,53 +1,50 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Chatbot Professionale</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Validazione Voucher & Chatbot</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="./static/voucher.css">
+  <link rel="stylesheet" href="./static/style.css">
 </head>
 <body>
-
-    <!-- Icona flottante -->
-    <div id="chat-icon">
-        <i class="fas fa-robot"></i>
-        <div class="notification-badge">1</div>
+  <!-- FORM VOUCHER -->
+  <div class="container">
+    <div class="voucher-card">
+      <div class="voucher-header">
+        <i class="fas fa-ticket-alt"></i>
+        <h2>Inserisci i dettagli del voucher</h2>
+      </div>
+      <div class="voucher-body" for="voucher" >
+        <div class="input-group"><label for="voucher-code">Codice voucher:</label><input type="text" id="voucher-code" placeholder="Es: ABC123XYZ456"></div>
+        <div class="input-group"><label for="voucher-type">Tipo:</label><select id="voucher-type"><option value="">Seleziona tipo</option><option value="VIP">VIP</option><option value="PROMO">PROMO</option><option value="GIFT">GIFT</option></select></div>
+        <div class="input-group"><label for="voucher-value">Valore:</label><input type="text" id="voucher-value" placeholder="Es: 50€ o 20%"></div>
+        <div class="input-group"><label for="voucher-expiry">Data di scadenza:</label><input type="date" id="voucher-expiry"></div>
+        <div class="input-group"><label for="voucher-recipient">Destinatario:</label><input type="text" id="voucher-recipient" placeholder="Nome destinatario"></div>
+      </div>
     </div>
+  </div>
 
-    <!-- Finestra chat -->
-    <div id="chat-window">
-        <div class="chat-header">
-            <div class="title">
-                <i class="fas fa-robot"></i>
-                <span>AI Assistant</span>
-            </div>
-            <div class="chat-actions">
-                <button title="Cronologia chat"><i class="fas fa-history"></i></button>
-                <button title="Impostazioni"><i class="fas fa-cog"></i></button>
-                <button class="close-btn" title="Chiudi chat"><i class="fas fa-times"></i></button>
-            </div>
-        </div>
-        <div class="chat-box">
-            <div class="welcome-message">
-                <h4>Benvenuto!</h4>
-                <p>Sono il tuo assistente virtuale, pronto ad aiutarti con le tue domande.</p>
-            </div>
-            <div class="message ai">Ciao! Scrivi qualcosa e lo trasformerò in maiuscolo!<span class="message-time">12:45</span></div>
-        </div>
-        <div class="typing-indicator">
-            <span></span>
-            <span></span>
-            <span></span>
-        </div>
-        <div class="chat-form">
-            <input type="text" id="user-input" placeholder="Scrivi un messaggio..." />
-            <button type="button" id="send-button">
-                <i class="fas fa-paper-plane"></i>
-            </button>
-        </div>
+  <!-- CHATBOT -->
+  <div id="chat-icon"><i class="fas fa-robot"></i><div class="notification-badge">1</div></div>
+  <div id="chat-window">
+    <div class="chat-header">
+      <div class="title"><i class="fas fa-robot"></i>AI Assistant</div>
+      <div class="chat-actions"><button class="close-btn"><i class="fas fa-times"></i></button></div>
     </div>
+    <div class="chat-box"></div>
+    <div class="typing-indicator">AI sta scrivendo...</div>
+    
+    <div class="chat-form">
+      <input type="text" id="user-input" placeholder="Scrivi un messaggio..." style="display:none;">
 
-    <script src="/static/script.js"></script>
+       <!--<button type="button" id="send-button"><i class="fas fa-paper-plane"></i></button> -->
+    </div>
+  </div>
+
+  <!-- SCRIPT -->
+  <script src="./static/script.js"></script>
+  <script src="./static/voucher.js"></script>
 </body>
 </html>
