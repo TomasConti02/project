@@ -108,49 +108,31 @@ def formatting_instruction_func(examples):
     return {"text": texts}
 
 ##################################################################################################
-# Caricamento dataset - ADATTATO PER IL NUOVO FORMATO
+# Caricamento dataset da Hugging Face
 from datasets import load_dataset, Dataset
 
-# Opzione 1: Se il dataset è su un file JSON locale
-# dataset = Dataset.from_json("path/to/your/dataset.json")
+# Carica il dataset dal tuo repository Hugging Face
+print("Caricando dataset da Hugging Face...")
+dataset = load_dataset(
+    path = "tomasconti/TestTuning",           # Il tuo repository
+    data_files = "Command.json",             # Il file specifico
+    split = "train"                          # Split di training
+)
 
-# Opzione 2: Se il dataset è già su Hugging Face Hub
-# dataset = load_dataset("your-username/your-dataset-name", split="train")
-
-# Opzione 3: Creazione manuale del dataset dai tuoi dati
-# Sostituisci questi dati con il tuo dataset completo
-sample_data = [
-    {"instruction": "Crea un file vuoto con il nome specificato.", "input": "prova.txt", "output": "touch prova.txt"},
-    {"instruction": "Mostra i file presenti nella cartella corrente.", "input": "", "output": "ls -l"},
-    {"instruction": "Copia il file indicato nella cartella di destinazione.", "input": "prova.txt -> backup/", "output": "cp prova.txt backup/"},
-    {"instruction": "Rimuovi il file indicato.", "input": "prova.txt", "output": "rm prova.txt"},
-    {"instruction": "Stampa il contenuto del file specificato a schermo.", "input": "test.txt", "output": "cat test.txt"},
-    {"instruction": "Sposta il file specificato nella cartella destinazione.", "input": "data.csv -> dati/", "output": "mv data.csv dati/"},
-    {"instruction": "Rendi eseguibile lo script indicato.", "input": "script.sh", "output": "chmod +x script.sh"},
-    {"instruction": "Crea una nuova cartella con il nome indicato.", "input": "progetti", "output": "mkdir progetti"},
-    {"instruction": "Vai nella cartella indicata.", "input": "progetti", "output": "cd progetti"},
-    {"instruction": "Scarica un file da internet all'indirizzo fornito.", "input": "http://example.com/file.zip", "output": "wget http://example.com/file.zip"},
-    {"instruction": "Estrai il contenuto dell'archivio indicato.", "input": "file.tar.gz", "output": "tar -xvzf file.tar.gz"},
-    {"instruction": "Mostra le prime N righe del file indicato.", "input": "10 righe da log.txt", "output": "head -n 10 log.txt"},
-    {"instruction": "Mostra le ultime N righe del file indicato.", "input": "20 righe da log.txt", "output": "tail -n 20 log.txt"},
-    {"instruction": "Conta il numero di righe nel file specificato.", "input": "dati.txt", "output": "wc -l dati.txt"},
-    {"instruction": "Cerca una parola chiave all'interno di un file.", "input": "errore in server.log", "output": "grep 'errore' server.log"},
-    {"instruction": "Mostra lo spazio libero su disco.", "input": "", "output": "df -h"},
-    {"instruction": "Mostra i processi in esecuzione.", "input": "", "output": "ps aux"},
-    {"instruction": "Termina il processo con il PID specificato.", "input": "1234", "output": "kill 1234"},
-    {"instruction": "Mostra l'indirizzo IP della macchina.", "input": "", "output": "ip addr show"},
-    {"instruction": "Comprimi il file specificato in formato gzip.", "input": "report.txt", "output": "gzip report.txt"}
-]
-
-# Crea il dataset da questi dati
-dataset = Dataset.from_list(sample_data)
+print(f"Dataset caricato con successo: {len(dataset)} esempi")
 
 ##################################################################################################
-# Debug: controlliamo la struttura del dataset
-print("Dataset originale:")
-print(dataset)
-print("\nPrimo esempio:")
-print(dataset[0])
+# Debug: controlliamo la struttura del dataset scaricato
+print("Dataset scaricato da Hugging Face:")
+print(f"Numero di esempi: {len(dataset)}")
+print(f"Colonne disponibili: {dataset.column_names}")
+print("\nPrimi 3 esempi del dataset:")
+for i in range(min(3, len(dataset))):
+    print(f"Esempio {i+1}:")
+    print(f"  Instruction: {dataset[i]['instruction']}")
+    print(f"  Input: '{dataset[i]['input']}'")
+    print(f"  Output: {dataset[i]['output']}")
+    print()
 
 ##################################################################################################
 # Applica la funzione di formattazione
@@ -184,7 +166,7 @@ trainer = SFTTrainer(
         per_device_train_batch_size = 2,
         gradient_accumulation_steps = 4,
         warmup_steps = 5,
-        max_steps = 60,  # Aumenta se hai più dati
+        max_steps = 120,  # Aumentato per il dataset più grande
         learning_rate = 2e-4,
         fp16 = not is_bfloat16_supported(),
         bf16 = is_bfloat16_supported(),
