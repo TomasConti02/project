@@ -6,6 +6,8 @@ Si tratta di una **demo di test e prova**.
 ## Dataset
 Il dataset utilizzato per il tuning del modello è disponibile su Hugging Face:
 [ProjectDataset.json](https://huggingface.co/datasets/tomasconti/TestTuning/blob/main/ProjectDataset.json)
+## Document:
+[SharedGoogleDoc](https://docs.google.com/document/d/1U2_6-UQ-qV_Qz6_OPIo5WnL3GZa66lywsnZqHniifyg/edit?usp=sharing)
 ---
 ## Requisiti
 Assicurarsi di avere installato:
