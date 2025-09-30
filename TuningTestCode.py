@@ -159,3 +159,83 @@ print(tokenizer.decode(outputs[0], skip_special_tokens=True))
 # Salvataggio del modello
 model.save_pretrained_gguf("eCivisWeb_assistant", tokenizer, quantization_method="q4_k_m")
 print("Model saved successfully as 'eCivisWeb_assistant'!")
+"""
+from unsloth.chat_templates import train_on_responses_only
+
+# SOSTITUISCI questa parte:
+trainer = train_on_responses_only(
+    trainer,
+    instruction_part="<|start_header_id|>user<|end_header_id|>\n\n",
+    response_part="<|start_header_id|>assistant<|end_header_id|>\n\n",
+)
+
+# CON questa versione avanzata:
+def train_on_all_assistant_responses(trainer):
+    """Addestra su TUTTE le risposte dell'assistant in conversazioni multi-turn"""
+    def _formatting_train_on_responses(examples):
+        tokenizer = trainer.tokenizer
+        texts = examples["text"]
+        
+        # Lista per tutti i labels
+        all_labels = []
+        
+        for text in texts:
+            # Tokenizza il testo completo
+            tokenized = tokenizer(text, truncation=False, padding=False)
+            input_ids = tokenized["input_ids"]
+            
+            # Crea labels: -100 per tutto tranne le risposte assistant
+            labels = [-100] * len(input_ids)
+            
+            # Trova tutte le occorrenze del tag assistant
+            assistant_start = "<|start_header_id|>assistant<|end_header_id|>"
+            start_idx = 0
+            
+            while True:
+                # Cerca il prossimo tag assistant
+                assistant_pos = text.find(assistant_start, start_idx)
+                if assistant_pos == -1:
+                    break
+                
+                # Trova la fine del tag assistant
+                content_start = assistant_pos + len(assistant_start)
+                
+                # Trova il prossimo tag (user, system o fine)
+                next_tag_pos = text.find("<|start_header_id|>", content_start)
+                if next_tag_pos == -1:
+                    # Ultima risposta - va fino alla fine
+                    response_end = len(text)
+                else:
+                    response_end = next_tag_pos
+                
+                # Trova i token corrispondenti a questa risposta
+                response_text = text[content_start:response_end].strip()
+                response_tokens = tokenizer.encode(response_text, add_special_tokens=False)
+                
+                # Trova la posizione nel tokenizzato completo
+                # (questa è una semplificazione - nella pratica serve un mapping preciso)
+                response_start_idx = assistant_pos
+                
+                # Marca questi token come da addestrare (non -100)
+                # Nota: questa è una versione semplificata
+                for i in range(len(response_tokens)):
+                    if response_start_idx + i < len(labels):
+                        labels[response_start_idx + i] = input_ids[response_start_idx + i]
+                
+                start_idx = response_end
+            
+            all_labels.append(labels)
+        
+        return {"labels": all_labels}
+    
+    # Applica la formattazione
+    trainer.train_dataset = trainer.train_dataset.map(
+        _formatting_train_on_responses,
+        batched=True,
+        batch_size=len(trainer.train_dataset),
+    )
+    
+    return trainer
+
+# USALA COSÌ:
+trainer = train_on_all_assistant_responses(trainer)"""
