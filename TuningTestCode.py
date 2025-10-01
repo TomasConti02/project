@@ -51,21 +51,28 @@ def formatting_prompts_func(examples):
     convos = examples["conversations"]
     texts = [tokenizer.apply_chat_template(convo, tokenize=False, add_generation_prompt=False) for convo in convos]
     return {"text": texts}
-
+pass
 # CARICAMENTO DEL DATASET DAL FILE JSON
-"""
-dataset = load_dataset(
-    'json',
-    data_files=['file1.json', 'file2.json', 'file3.json'],
+from datasets import load_dataset, concatenate_datasets
+import json
+# Carica i dataset separatamente
+dataset_conservativo = load_dataset(
+    path="tomasconti/TestTuning",
+    data_files=['dataset_conservativo.json'],
     split='train'
 )
-"""
-dataset = load_dataset(
-    'json',
-    data_files='il_tuo_file.json',  # Sostituisci con il percorso del tuo file JSON
+dataset_bilanciato = load_dataset(
+    path="tomasconti/TestTuning", 
+    data_files=['dataset_bilanciato.json'],
     split='train'
 )
-
+dataset_creativo = load_dataset(
+    path="tomasconti/TestTuning",
+    data_files=['dataset_creativo.json'],
+    split='train'
+)
+# Unisci i dataset
+dataset = concatenate_datasets([dataset_conservativo, dataset_bilanciato, dataset_creativo])
 # Verifica la struttura del dataset
 print("Struttura del dataset:")
 print(f"Numero di esempi: {len(dataset)}")
