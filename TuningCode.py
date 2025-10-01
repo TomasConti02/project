@@ -140,7 +140,7 @@ def formatting_prompts_func(examples):
 pass
 #faccio il load del dataset personalizzato 
 from datasets import load_dataset
-#dataset = load_dataset("tomasconti/TestTuning", split = "train")
+dataset = load_dataset("tomasconti/TestTuning", split = "train")
 dataset = load_dataset(
     path = "tomasconti/TestTuning",                 # HF dataset repo or local directory
     data_files = "Test2.json",  # JSON file with formatted conversations
