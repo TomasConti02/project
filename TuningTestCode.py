@@ -251,3 +251,211 @@ print(tokenizer.decode(labels))
 # Training
 print("\nStarting training...")
 trainer_stats = trainer.train()
+#--------------------------------------------------------------------------------------------------#
+#--------------------------------------------------------------------------------------------------#
+#--------------------------------------------------------------------------------------------------#
+# =============================================================================
+# TEST DI VALIDAZIONE SUL DATASET DI TRAINING
+# =============================================================================
+
+# Prima definiamo la funzione test_model correttamente con gestione device
+def test_model(question, system_prompt=None, max_tokens=200):
+    """Testa il modello con una domanda specifica"""
+    if system_prompt is None:
+        system_prompt = "Sei un assistente specializzato nella gestione di Assistenza Clienti al portale eCivisWeb."
+    
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": question}
+    ]
+    
+    # Applica il template chat
+    inputs = tokenizer.apply_chat_template(
+        messages, 
+        tokenize=True, 
+        add_generation_prompt=True, 
+        return_tensors="pt"
+    )
+    
+    # Sposta gli input sullo stesso device del modello
+    device = model.device
+    inputs = inputs.to(device)
+    
+    # Generazione
+    outputs = model.generate(
+        inputs,
+        max_new_tokens=max_tokens,
+        temperature=0.7,
+        do_sample=True,
+        pad_token_id=tokenizer.eos_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+    )
+    
+    response = tokenizer.decode(outputs[0], skip_special_tokens=False)
+    
+    # Estrai solo la risposta dell'assistant
+    if "<|start_header_id|>assistant<|end_header_id|>" in response:
+        response = response.split("<|start_header_id|>assistant<|end_header_id|>")[-1]
+        response = response.split("<|eot_id|>")[0].strip()
+    
+    return response
+
+print("🎯 TEST DI VALIDAZIONE - CONFRONTO CON DATASET ORIGINALE")
+print("=" * 60)
+
+# Test cases direttamente dal dataset
+validation_tests = [
+    {
+        "question": "Quali credenziali utilizzo per accedere al portale eCivisWeb?",
+        "expected_topic": "SPID",
+        "expected_context": "CIE"
+    },
+    {
+        "question": "Cosa posso fare nel modulo 'Stato Contabile'?",
+        "expected_topic": "movimenti bancari",
+        "expected_context": "contabilità"
+    },
+    {
+        "question": "Come funziona la registrazione dei figli su eCivisWeb?",
+        "expected_topic": "Registrazione Figli",
+        "expected_context": "genitore"
+    },
+    {
+        "question": "Cliccando su 'Dati anagrafici' cosa posso verificare?",
+        "expected_topic": "dati anagrafici",
+        "expected_context": "corretti"
+    },
+    {
+        "question": "Quali campi servono per la mensa scolastica?",
+        "expected_topic": "codice badge",
+        "expected_context": "tessera"
+    }
+]
+
+def validate_response(question, response, expected_topic, expected_context):
+    """Valuta la qualità della risposta"""
+    score = 0
+    feedback = []
+    
+    # Controllo topic principale
+    if expected_topic.lower() in response.lower():
+        score += 2
+        feedback.append("✅ Topic corretto")
+    else:
+        feedback.append("❌ Topic mancante")
+    
+    # Controllo contesto
+    if expected_context.lower() in response.lower():
+        score += 1
+        feedback.append("✅ Contesto appropriato")
+    else:
+        feedback.append("⚠️  Contesto debole")
+    
+    # Controllo lunghezza
+    if len(response) > 20:
+        score += 1
+        feedback.append("✅ Risposta sufficientemente dettagliata")
+    else:
+        feedback.append("❌ Risposta troppo breve")
+    
+    # Controllo formattazione
+    if "**" not in response and "DOMANDA:" not in response:
+        score += 1
+        feedback.append("✅ Formattazione naturale")
+    else:
+        feedback.append("⚠️  Formattazione dataset")
+    
+    return score, feedback
+
+# Esegui i test
+print("\n🔍 RISULTATI VALIDAZIONE:")
+print("-" * 50)
+
+total_score = 0
+max_score = len(validation_tests) * 5
+
+for i, test in enumerate(validation_tests, 1):
+    print(f"\n{i}. TEST: {test['question']}")
+    
+    try:
+        # Genera risposta
+        response = test_model(test['question'], max_tokens=150)
+        
+        # Valuta
+        score, feedback = validate_response(
+            test['question'], 
+            response, 
+            test['expected_topic'],
+            test['expected_context']
+        )
+        
+        total_score += score
+        
+        print(f"   Risposta: {response}")
+        print(f"   Punteggio: {score}/5")
+        for fb in feedback:
+            print(f"   - {fb}")
+            
+    except Exception as e:
+        print(f"   ❌ Errore durante il test: {e}")
+        response = "ERRORE"
+        score = 0
+
+# Calcola punteggio finale
+if max_score > 0:
+    final_score_percent = (total_score / max_score) * 100
+else:
+    final_score_percent = 0
+
+print(f"\n" + "=" * 60)
+print(f"📊 PUNTEGGIO FINALE: {final_score_percent:.1f}%")
+print(f"({total_score}/{max_score} punti)")
+print("=" * 60)
+
+# Interpretazione del punteggio
+if final_score_percent >= 80:
+    print("🎉 ECCELLENTE - Il modello ha appreso perfettamente!")
+elif final_score_percent >= 60:
+    print("✅ BUONO - Il modello funziona bene")
+elif final_score_percent >= 40:
+    print("⚠️  SUFFICIENTE - Qualche area da migliorare")
+else:
+    print("❌ PROBLEMATICO - Necessita di più training")
+
+# =============================================================================
+# TEST SEMPLICI E RAPIDI
+# =============================================================================
+
+print("\n🧪 TEST RAPIDI DI BASE")
+print("-" * 40)
+
+simple_tests = [
+    "Come accedo a eCivisWeb?",
+    "Come pagare la mensa?",
+    "Chi può disdire i pasti?"
+]
+
+for i, question in enumerate(simple_tests, 1):
+    try:
+        response = test_model(question, max_tokens=100)
+        print(f"{i}. Q: {question}")
+        print(f"   A: {response[:100]}...")
+        print()
+    except Exception as e:
+        print(f"{i}. Q: {question}")
+        print(f"   A: ❌ Errore: {e}")
+        print()
+
+# =============================================================================
+# STATISTICHE TRAINING
+# =============================================================================
+
+print("\n📊 STATISTICHE TRAINING")
+print("-" * 40)
+print(f"✅ Training completato con successo!")
+print(f"📈 Loss finale: {trainer_stats.training_loss:.4f}")
+print(f"⏱️  Tempo di training: {trainer_stats.metrics['train_runtime']:.1f}s")
+
+# Verifica che il modello sia addestrato
+print(f"🔧 Modello device: {model.device}")
+print(f"💡 Modello in memoria - NON salvato in locale")
