@@ -25,6 +25,11 @@
   "seed": 3407
 }
 """
+"""
+Script Completo: Training + Validazione Immediata
+Esegue il fine-tuning e testa subito il modello senza salvare
+"""
+
 import torch
 from unsloth import FastLanguageModel
 from unsloth.chat_templates import train_on_responses_only
@@ -33,38 +38,177 @@ from trl import SFTTrainer
 from transformers import TrainingArguments, DataCollatorForSeq2Seq
 from unsloth import is_bfloat16_supported
 import json
+from datetime import datetime
+from typing import List, Dict
+import re
 
-print("🚀 TRAINING COMPLETO CON CONFIGURAZIONE OTTIMIZZATA")
-print("="*50)
+print("🚀 TRAINING + VALIDAZIONE AUTOMATICA")
+print("="*70)
 
-# Carica la configurazione ottimizzata
+# =============================================================================
+# CONFIGURAZIONE
+# =============================================================================
 with open("optimized_config_simple.json", "r") as f:
     OPTIMIZED_CONFIG = json.load(f)
 
-# Converti dtype
 OPTIMIZED_CONFIG["dtype"] = torch.float16
 
-# Aggiusta parametri per training completo
 FINAL_TRAINING_CONFIG = {
     **OPTIMIZED_CONFIG,
-    "max_steps": 300,           # Aumentato per training completo
-    "warmup_steps": 40,         # Warmup più lungo
-    "save_steps": 100,          # Salvataggio ogni 100 steps
-    "logging_steps": 20,        # Logging meno frequente
-    "load_in_4bit": False,      # Più stabile per training lungo
-    "lr_scheduler_type": "cosine",  # Scheduler migliore
+    "max_steps": 300,
+    "warmup_steps": 40,
+    "logging_steps": 20,
+    "load_in_4bit": False,
+    "lr_scheduler_type": "cosine",
 }
 
-print("🎯 CONFIGURAZIONE FINALE:")
-for key, value in FINAL_TRAINING_CONFIG.items():
-    if key in ["learning_rate", "lora_r", "lora_alpha", "lora_dropout", "max_steps"]:
-        print(f"   {key}: {value}")
+# =============================================================================
+# TEST QUESTIONS PER VALIDAZIONE
+# =============================================================================
+TEST_QUESTIONS = [
+    {
+        "id": 1,
+        "category": "Accesso",
+        "question": "Come posso recuperare la mia password?",
+        "expected_keywords": ["area personale", "alto a destra", "dati anagrafici", "password", "login"],
+        "wrong_keywords": ["dolore", "richieste", "download", "scaricare password"],
+        "difficulty": "facile"
+    },
+    {
+        "id": 2,
+        "category": "Documentazione",
+        "question": "Dove trovo il manuale d'uso?",
+        "expected_keywords": ["documenti", "sezione", "portale", "manuali", "informative"],
+        "wrong_keywords": ["moduli online", "note", "prazzi"],
+        "difficulty": "facile"
+    },
+    {
+        "id": 3,
+        "category": "Accesso",
+        "question": "Non riesco ad accedere al mio account",
+        "expected_keywords": ["SPID", "CIE", "autenticazione", "credenziali", "comune.ecivis.it"],
+        "wrong_keywords": ["database", "mezi", "servizi", "attesa"],
+        "difficulty": "media"
+    },
+    {
+        "id": 4,
+        "category": "Refezione",
+        "question": "Come faccio a ricaricare il conto della mensa?",
+        "expected_keywords": ["pagamenti", "refezione", "ricarica", "prepagato", "saldo"],
+        "wrong_keywords": ["emissione", "retta", "post-pagato"],
+        "difficulty": "media"
+    },
+    {
+        "id": 5,
+        "category": "Prenotazioni",
+        "question": "Come posso disdire il pasto di mio figlio?",
+        "expected_keywords": ["prenotazioni", "calendario", "assenza", "disdire", "rosso"],
+        "wrong_keywords": ["pagamenti", "ricarica", "emissione"],
+        "difficulty": "media"
+    },
+    {
+        "id": 6,
+        "category": "Utenti",
+        "question": "Dove vedo i servizi a cui è iscritto mio figlio?",
+        "expected_keywords": ["utenti", "servizi", "iscritto", "refezione", "trasporto"],
+        "wrong_keywords": ["pagamenti", "prenotazioni"],
+        "difficulty": "facile"
+    },
+    {
+        "id": 7,
+        "category": "Generale",
+        "question": "Quali sezioni posso vedere senza fare il login?",
+        "expected_keywords": ["notizie", "documenti", "consultabili", "login"],
+        "wrong_keywords": ["utenti", "pagamenti", "prenotazioni"],
+        "difficulty": "facile"
+    },
+    {
+        "id": 8,
+        "category": "Refezione",
+        "question": "Cosa significa il colore verde nel calendario delle prenotazioni?",
+        "expected_keywords": ["pasto base", "presente", "verde", "mensa"],
+        "wrong_keywords": ["assenza", "rosso", "pasto bianco", "giallo"],
+        "difficulty": "facile"
+    },
+    {
+        "id": 9,
+        "category": "Pagamenti",
+        "question": "Come funziona il servizio in post-pagato?",
+        "expected_keywords": ["emissione", "retta", "post-pagato", "quota fissa"],
+        "wrong_keywords": ["ricarica", "prepagato", "conto elettronico"],
+        "difficulty": "difficile"
+    },
+    {
+        "id": 10,
+        "category": "Moduli",
+        "question": "Posso modificare una domanda già inviata?",
+        "expected_keywords": ["moduli online", "eliminare", "cancellare", "non è possibile", "modificare"],
+        "wrong_keywords": ["edit", "aggiornare"],
+        "difficulty": "media"
+    },
+]
 
 # =============================================================================
-# CARICAMENTO DATASET COMPLETO
+# FUNZIONI DI VALUTAZIONE
 # =============================================================================
-print("\n📦 Caricamento dataset completo...")
+def calculate_keyword_score(response: str, expected: List[str], wrong: List[str]) -> Dict:
+    response_lower = response.lower()
+    correct_found = sum(1 for kw in expected if kw.lower() in response_lower)
+    correct_score = (correct_found / len(expected)) * 100 if expected else 0
+    wrong_found = sum(1 for kw in wrong if kw.lower() in response_lower)
+    wrong_penalty = (wrong_found / max(len(wrong), 1)) * 50
+    final_score = max(0, correct_score - wrong_penalty)
+    
+    return {
+        "correct_found": correct_found,
+        "correct_total": len(expected),
+        "wrong_found": wrong_found,
+        "correct_score": correct_score,
+        "wrong_penalty": wrong_penalty,
+        "final_score": final_score,
+        "found_keywords": [kw for kw in expected if kw.lower() in response_lower],
+        "found_wrong": [kw for kw in wrong if kw.lower() in response_lower]
+    }
 
+def evaluate_coherence(response: str) -> Dict:
+    word_count = len(response.split())
+    length_ok = 10 <= word_count <= 150
+    incomplete = response.endswith((' ', '\n')) or len(response) < 20
+    words = response.lower().split()
+    unique_ratio = len(set(words)) / len(words) if words else 0
+    no_repetition = unique_ratio > 0.5
+    has_strange_chars = bool(re.search(r'[^\w\s.,;:!?\-àèéìòù()\'\"]+', response))
+    
+    coherence_score = 0
+    if length_ok: coherence_score += 30
+    if not incomplete: coherence_score += 30
+    if no_repetition: coherence_score += 20
+    if not has_strange_chars: coherence_score += 20
+    
+    return {
+        "word_count": word_count,
+        "length_ok": length_ok,
+        "complete": not incomplete,
+        "no_repetition": no_repetition,
+        "no_strange_chars": not has_strange_chars,
+        "coherence_score": coherence_score
+    }
+
+def get_overall_rating(keyword_score: float, coherence_score: float) -> str:
+    total_score = (keyword_score * 0.6) + (coherence_score * 0.4)
+    if total_score >= 80: return "ECCELLENTE"
+    elif total_score >= 60: return "BUONO"
+    elif total_score >= 40: return "SUFFICIENTE"
+    else: return "INSUFFICIENTE"
+
+# =============================================================================
+# FASE 1: TRAINING
+# =============================================================================
+print("\n" + "="*70)
+print("FASE 1: TRAINING DEL MODELLO")
+print("="*70)
+
+print("\nCaricamento dataset...")
 datasets_to_load = [
     'dataset_conservativo.json',
     'dataset_bilanciato.json', 
@@ -77,12 +221,11 @@ loaded_datasets = []
 for data_file in datasets_to_load:
     ds = load_dataset("tomasconti/TestTuning", data_files=[data_file], split='train')
     loaded_datasets.append(ds)
-    print(f"✅ {data_file}: {len(ds)} esempi")
+    print(f"  {data_file}: {len(ds)} esempi")
 
 full_dataset = concatenate_datasets(loaded_datasets)
-print(f"📊 Dataset completo: {len(full_dataset)} esempi")
+print(f"\nDataset completo: {len(full_dataset)} esempi")
 
-# Formattazione
 def exact_llama_template(messages):
     formatted_text = "<|begin_of_text|>"
     for message in messages:
@@ -106,13 +249,8 @@ def formatting_func(examples):
     return {"text": texts}
 
 dataset = full_dataset.map(formatting_func, batched=True, remove_columns=full_dataset.column_names)
-print(f"🎯 Dataset formattato: {len(dataset)} esempi")
 
-# =============================================================================
-# INIZIALIZZAZIONE MODELLO CON CONFIGURAZIONE OTTIMIZZATA
-# =============================================================================
-print("\n🏗️ Inizializzazione modello con parametri ottimizzati...")
-
+print("\nInizializzazione modello...")
 model, tokenizer = FastLanguageModel.from_pretrained(
     model_name=FINAL_TRAINING_CONFIG["model_name"],
     max_seq_length=FINAL_TRAINING_CONFIG["max_seq_length"],
@@ -131,13 +269,6 @@ model = FastLanguageModel.get_peft_model(
     random_state=FINAL_TRAINING_CONFIG["seed"],
 )
 
-print("✅ Modello inizializzato con successo!")
-print(f"   Parametri LoRA: r={FINAL_TRAINING_CONFIG['lora_r']}, α={FINAL_TRAINING_CONFIG['lora_alpha']}")
-print(f"   Dropout: {FINAL_TRAINING_CONFIG['lora_dropout']:.3f}")
-
-# =============================================================================
-# SETUP TRAINING (SENZA SALVATAGGIO)
-# =============================================================================
 trainer = SFTTrainer(
     model=model,
     tokenizer=tokenizer,
@@ -159,252 +290,144 @@ trainer = SFTTrainer(
         weight_decay=FINAL_TRAINING_CONFIG["weight_decay"],
         lr_scheduler_type=FINAL_TRAINING_CONFIG["lr_scheduler_type"],
         seed=FINAL_TRAINING_CONFIG["seed"],
-        output_dir=None,  # Nessun salvataggio
+        output_dir=None,
         report_to="none",
-        save_strategy="no",  # Disabilita salvataggio
-        save_steps=None,
-        save_total_limit=0,
+        save_strategy="no",
     ),
 )
 
-# Applica mascheramento
 trainer = train_on_responses_only(
     trainer,
     instruction_part="<|start_header_id|>user<|end_header_id|>\n\n",
     response_part="<|start_header_id|>assistant<|end_header_id|>\n\n",
 )
 
-# =============================================================================
-# TRAINING COMPLETO
-# =============================================================================
-print(f"\n🎯 INIZIO TRAINING COMPLETO")
-print("="*40)
-print(f"📈 Steps totali: {FINAL_TRAINING_CONFIG['max_steps']}")
-print(f"⏰ Tempo stimato: 15-25 minuti")
-print(f"💾 Nessun salvataggio del modello")
-
+print("\nInizio training...")
 trainer_stats = trainer.train()
-
-print(f"\n✅ TRAINING COMPLETATO!")
-print(f"📉 Loss finale: {trainer_stats.training_loss:.4f}")
+print(f"\nTraining completato! Loss finale: {trainer_stats.training_loss:.4f}")
 
 # =============================================================================
-# TEST DEL MODELLO
+# FASE 2: VALIDAZIONE IMMEDIATA
 # =============================================================================
-print(f"\n🧪 Test del modello addestrato...")
+print("\n" + "="*70)
+print("FASE 2: VALIDAZIONE DEL MODELLO")
+print("="*70)
 
-# Prepara il modello per l'inferenza
 FastLanguageModel.for_inference(model)
 
-# Test con diversi esempi
-test_cases = [
-    {
-        "system": "Sei un assistente specializzato nella gestione di Assistenza Clienti al portale eCivisWeb.",
-        "user": "Come posso recuperare la mia password?"
-    },
-    {
-        "system": "Sei un assistente specializzato nella gestione di Assistenza Clienti al portale eCivisWeb.",
-        "user": "Dove trovo il manuale d'uso?"
-    },
-    {
-        "system": "Sei un assistente specializzato nella gestione di Assistenza Clienti al portale eCivisWeb.", 
-        "user": "Non riesco ad accedere al mio account"
-    }
-]
+results = []
+total_keyword_score = 0
+total_coherence_score = 0
 
-print(f"\n🔍 TEST RISPOSTE DEL MODELLO:")
-print("="*50)
-
-for i, test_case in enumerate(test_cases, 1):
-    print(f"\n📝 Test {i}:")
-    print(f"   User: {test_case['user']}")
+for i, test in enumerate(TEST_QUESTIONS, 1):
+    print(f"\n[{i}/{len(TEST_QUESTIONS)}] {test['category']}: {test['question']}")
     
-    test_messages = [
-        {"role": "system", "content": test_case["system"]},
-        {"role": "user", "content": test_case["user"]}
+    messages = [
+        {"role": "system", "content": "Sei un assistente specializzato nella gestione di Assistenza Clienti al portale eCivisWeb."},
+        {"role": "user", "content": test['question']}
     ]
-
+    
     inputs = tokenizer.apply_chat_template(
-        test_messages,
+        messages,
         tokenize=True,
         add_generation_prompt=True,
         return_tensors="pt"
     ).to("cuda")
-
+    
     outputs = model.generate(
         input_ids=inputs,
-        max_new_tokens=128,
+        max_new_tokens=256,
         temperature=0.7,
         do_sample=True,
+        top_p=0.9,
+        repetition_penalty=1.1,
         pad_token_id=tokenizer.eos_token_id,
     )
-
+    
     response = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    
-    # Estrai solo la risposta dell'assistant
     if "assistant" in response:
-        assistant_response = response.split("assistant")[-1].strip()
-        # Pulisci ulteriormente se necessario
-        assistant_response = assistant_response.replace("<|end_header_id|>", "").replace("\n\n", "").strip()
-    else:
-        assistant_response = response
+        response = response.split("assistant")[-1].strip()
     
-    print(f"   🤖 Assistant: {assistant_response}")
-    print("-" * 40)
+    keyword_eval = calculate_keyword_score(
+        response, 
+        test['expected_keywords'], 
+        test['wrong_keywords']
+    )
+    coherence_eval = evaluate_coherence(response)
+    rating = get_overall_rating(
+        keyword_eval['final_score'], 
+        coherence_eval['coherence_score']
+    )
+    
+    print(f"  Risposta: {response[:100]}{'...' if len(response) > 100 else ''}")
+    print(f"  Keyword: {keyword_eval['correct_found']}/{keyword_eval['correct_total']} | Coerenza: {coherence_eval['coherence_score']}/100 | Rating: {rating}")
+    
+    total_keyword_score += keyword_eval['final_score']
+    total_coherence_score += coherence_eval['coherence_score']
+    
+    results.append({
+        "test_id": test['id'],
+        "question": test['question'],
+        "response": response,
+        "keyword_score": keyword_eval['final_score'],
+        "coherence_score": coherence_eval['coherence_score'],
+        "rating": rating,
+        "details": {"keyword_eval": keyword_eval, "coherence_eval": coherence_eval}
+    })
 
 # =============================================================================
-# ANALISI FINALE
+# REPORT FINALE
 # =============================================================================
-print(f"\n📊 ANALISI FINALE RISULTATI:")
-print("="*40)
-print(f"🎯 Parametri ottimizzati utilizzati:")
-print(f"   • Learning Rate: {FINAL_TRAINING_CONFIG['learning_rate']:.2e}")
-print(f"   • LoRA r: {FINAL_TRAINING_CONFIG['lora_r']}")
-print(f"   • LoRA alpha: {FINAL_TRAINING_CONFIG['lora_alpha']}") 
-print(f"   • Dropout: {FINAL_TRAINING_CONFIG['lora_dropout']:.3f}")
-print(f"   • Steps completati: {FINAL_TRAINING_CONFIG['max_steps']}")
+print("\n" + "="*70)
+print("REPORT FINALE")
+print("="*70)
 
-print(f"\n📈 Performance training:")
-print(f"   • Loss iniziale (stimata): ~2.0")
-print(f"   • Loss finale: {trainer_stats.training_loss:.4f}")
-print(f"   • Riduzione loss: {((2.0 - trainer_stats.training_loss) / 2.0 * 100):.1f}%")
+avg_keyword = total_keyword_score / len(TEST_QUESTIONS)
+avg_coherence = total_coherence_score / len(TEST_QUESTIONS)
+overall_score = (avg_keyword * 0.6) + (avg_coherence * 0.4)
 
-print(f"\n💡 Valutazione qualitativa:")
-if trainer_stats.training_loss < 0.8:
-    print("   ✅ Eccellente - Il modello ha imparato bene")
-elif trainer_stats.training_loss < 1.2:
-    print("   ✅ Buono - Il modello ha imparato sufficientemente")
+print(f"\nPUNTEGGI MEDI:")
+print(f"  Contenuto (keyword): {avg_keyword:.1f}/100")
+print(f"  Coerenza: {avg_coherence:.1f}/100")
+print(f"  Punteggio complessivo: {overall_score:.1f}/100")
+
+rating_counts = {}
+for result in results:
+    rating = result['rating']
+    rating_counts[rating] = rating_counts.get(rating, 0) + 1
+
+print(f"\nDISTRIBUZIONE RATING:")
+for rating in ["ECCELLENTE", "BUONO", "SUFFICIENTE", "INSUFFICIENTE"]:
+    count = rating_counts.get(rating, 0)
+    percentage = (count / len(TEST_QUESTIONS)) * 100
+    print(f"  {rating}: {count}/{len(TEST_QUESTIONS)} ({percentage:.1f}%)")
+
+print(f"\nVALUTAZIONE FINE-TUNING:")
+if overall_score >= 80:
+    print("  ECCELLENTE - Il fine-tuning è molto efficace!")
+elif overall_score >= 60:
+    print("  BUONO - Il fine-tuning è efficace!")
+elif overall_score >= 40:
+    print("  SUFFICIENTE - Il fine-tuning ha alcuni problemi.")
 else:
-    print("   ⚠️  Accettabile - Potrebbe beneficiare di più training")
+    print("  INSUFFICIENTE - Il fine-tuning non è efficace.")
 
-print(f"\n🎉 TRAINING COMPLETATO CON SUCCESSO!")
-print("Il modello è stato addestrato con i parametri ottimizzati ed è pronto per l'uso!")
-"""
+print(f"\nTRAINING STATS:")
+print(f"  Loss finale: {trainer_stats.training_loss:.4f}")
+print(f"  Steps completati: {FINAL_TRAINING_CONFIG['max_steps']}")
+print(f"  Learning rate: {FINAL_TRAINING_CONFIG['learning_rate']:.2e}")
 
+output_file = f"validation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+with open(output_file, 'w', encoding='utf-8') as f:
+    json.dump({
+        "timestamp": datetime.now().isoformat(),
+        "training_loss": trainer_stats.training_loss,
+        "avg_keyword_score": avg_keyword,
+        "avg_coherence_score": avg_coherence,
+        "overall_score": overall_score,
+        "rating_distribution": rating_counts,
+        "detailed_results": results
+    }, f, indent=2, ensure_ascii=False)
 
-🦥 Unsloth: Will patch your computer to enable 2x faster free finetuning.
-🦥 Unsloth Zoo will now patch everything to make training faster!
-🚀 TRAINING COMPLETO CON CONFIGURAZIONE OTTIMIZZATA
-==================================================
-🎯 CONFIGURAZIONE FINALE:
-   lora_r: 8
-   lora_alpha: 16
-   lora_dropout: 0.06896194237202181
-   max_steps: 300
-   learning_rate: 0.0004621179133977688
-
-📦 Caricamento dataset completo...
-✅ dataset_conservativo.json: 18 esempi
-✅ dataset_bilanciato.json: 18 esempi
-✅ dataset_creativo.json: 18 esempi
-✅ dataset_esplorativo.json: 18 esempi
-✅ dataset_ultra_conservativo.json: 18 esempi
-📊 Dataset completo: 90 esempi
-
-Map: 100%
- 90/90 [00:00<00:00, 2635.24 examples/s]
-
-🎯 Dataset formattato: 90 esempi
-
-🏗️ Inizializzazione modello con parametri ottimizzati...
-==((====))==  Unsloth 2025.10.1: Fast Llama patching. Transformers: 4.56.2.
-   \\   /|    Tesla T4. Num GPUs = 1. Max memory: 14.741 GB. Platform: Linux.
-O^O/ \_/ \    Torch: 2.8.0+cu126. CUDA: 7.5. CUDA Toolkit: 12.6. Triton: 3.4.0
-\        /    Bfloat16 = FALSE. FA [Xformers = None. FA2 = False]
- "-____-"     Free license: http://github.com/unslothai/unsloth
-Unsloth: Fast downloading is enabled - ignore downloading bars which are red colored!
-
-Unsloth: Dropout = 0 is supported for fast patching. You are using dropout = 0.06896194237202181.
-Unsloth will patch all other layers, except LoRA matrices, causing a performance hit.
-Unsloth 2025.10.1 patched 16 layers with 0 QKV layers, 0 O layers and 0 MLP layers.
-
-✅ Modello inizializzato con successo!
-   Parametri LoRA: r=8, α=16
-   Dropout: 0.069
-
-Unsloth: Tokenizing ["text"] (num_proc=6): 100%
- 90/90 [00:05<00:00, 28.49 examples/s]
-Map (num_proc=2): 100%
- 90/90 [00:00<00:00, 321.34 examples/s]
-
-
-🎯 INIZIO TRAINING COMPLETO
-========================================
-📈 Steps totali: 300
-⏰ Tempo stimato: 15-25 minuti
-💾 Nessun salvataggio del modello
-
-==((====))==  Unsloth - 2x faster free finetuning | Num GPUs used = 1
-   \\   /|    Num examples = 90 | Num Epochs = 25 | Total steps = 300
-O^O/ \_/ \    Batch size per device = 2 | Gradient accumulation steps = 4
-\        /    Data Parallel GPUs = 1 | Total batch size (2 x 4 x 1) = 8
- "-____-"     Trainable parameters = 3,014,656 of 1,238,829,056 (0.24% trained)
-
-[300/300 04:12, Epoch 25/25]
-Step 	Training Loss
-20 	1.888600
-40 	1.312900
-60 	0.644000
-80 	0.254200
-100 	0.139100
-120 	0.082400
-140 	0.052400
-160 	0.037900
-180 	0.028000
-200 	0.022800
-220 	0.020400
-240 	0.017700
-260 	0.016600
-280 	0.016000
-300 	0.016400
-
-Unsloth: Will smartly offload gradients to save VRAM!
-
-The attention mask is not set and cannot be inferred from input because pad token is same as eos token. As a consequence, you may observe unexpected behavior. Please pass your input's `attention_mask` to obtain reliable results.
-
-
-✅ TRAINING COMPLETATO!
-📉 Loss finale: 0.3033
-
-🧪 Test del modello addestrato...
-
-🔍 TEST RISPOSTE DEL MODELLO:
-==================================================
-
-📝 Test 1:
-   User: Come posso recuperare la mia password?
-   🤖 Assistant: Per recuperare la tua password, puoi cliccare sul link "Dolore e richieste" nel modulo "Dolore", dove potrai scaricare la tua password corretta. Se hai già contato il servizio e è possibile lo farci sapere, puoi anche cliccare sul link "Contatto" per informarci del tuo nome e indirizzo per la future comunicazioni.
-----------------------------------------
-
-📝 Test 2:
-   User: Dove trovo il manuale d'uso?
-   🤖 Assistant: Il manuale d'uso per il portale eCivisWeb include tutte le informazioni necessarie per il funzionamento corretto del sito. Pertanto, se si accede al portale eCivisWeb e si trova in una delle sezioni principali, come ad esempio "Moduli online", all'area delle note o prazzi si potrà trovare la specifica informative necessaria per il successo della transazione.
-----------------------------------------
-
-📝 Test 3:
-   User: Non riesco ad accedere al mio account
-   🤖 Assistant: **Accedere al tuo account: un'esperienza rapida e sicura**Se non riesci ad accedere al tuo account, ci possa essere stato il caso di non ricaricare correttamente il database? O potresti avere presente l'azione di autenticare e potresti cercare di accedere alla tua sezione del portale eCivisWeb?Per accedere correttamente al tuo account, puoi provare a cliccare sul pulsante "Mezi e Servizi" e poi selezionare l'opzione di attesa. In questo modo potrai essere inform
-----------------------------------------
-
-📊 ANALISI FINALE RISULTATI:
-========================================
-🎯 Parametri ottimizzati utilizzati:
-   • Learning Rate: 4.62e-04
-   • LoRA r: 8
-   • LoRA alpha: 16
-   • Dropout: 0.069
-   • Steps completati: 300
-
-📈 Performance training:
-   • Loss iniziale (stimata): ~2.0
-   • Loss finale: 0.3033
-   • Riduzione loss: 84.8%
-
-💡 Valutazione qualitativa:
-   ✅ Eccellente - Il modello ha imparato bene
-
-🎉 TRAINING COMPLETATO CON SUCCESSO!
-Il modello è stato addestrato con i parametri ottimizzati ed è pronto per l'uso!
-
-
-"""
+print(f"\nRisultati salvati in: {output_file}")
+print("\nVALIDAZIONE COMPLETATA!")
