@@ -1,3 +1,20 @@
+"""
+FINAL_CONFIG = {
+    "model_name": "unsloth/Llama-3.2-1B-Instruct",
+    "max_seq_length": 2048,
+    "dtype": torch.float16,
+    "load_in_4bit": False,
+    "lora_r": 8,
+    "lora_alpha": 16,
+    "lora_dropout": 0.060,
+    "learning_rate": 4.70e-04,
+    "max_steps": 300,
+    "batch_size": 2,
+    "gradient_accumulation_steps": 4,
+    "warmup_steps": 30,
+    "weight_decay": 0.01
+}
+"""
 %%capture
 import os
 import torch
