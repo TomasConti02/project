@@ -1,9 +1,3 @@
-"""
-Questo è un Chatbot RAG (Retrieval-Augmented Generation) che combina:
-Recupero informazioni da documenti locali
-Generazione conversazionale naturale via Ollama
-"""
-"# rag_ollama_chatbot.py - Chatbot naturale e conversazionale
 from sentence_transformers import SentenceTransformer
 import faiss, re
 import requests
@@ -13,41 +7,68 @@ import time
 print("🤖 INIZIALIZZAZIONE CHATBOT NATURALE...")
 
 # ==================== CONFIGURAZIONE ====================
-DOCUMENT_PATH = "test.txt"
-OLLAMA_MODEL = "mistral"
+DOCUMENT_PATH = "test.json"
+OLLAMA_MODEL = "llama3.2:1b"  # Modello che hai su Colab
 OLLAMA_URL = "http://localhost:11434/api/generate"
 
 # ==================== SISTEMA RAG OTTIMIZZATO ====================
-"""
-Questa parte costruisce il motore RAG, cioè il sistema che permette al chatbot di:
-leggere un documento,
-dividerlo in chunk di testo,
-calcolare embedding semantici,
-e salvare tutto in un indice FAISS per poter cercare rapidamente i pezzi di testo rilevanti.
-"""
 class ChatbotRAGSystem:
     def __init__(self, model_name="all-MiniLM-L6-v2"):
         self.model = SentenceTransformer(model_name)
         self.chunks = []
+        self.chunk_metadata = []
         self.index = None
         self.index_loaded = False
 
     def load_document(self, file_path):
-        """Carica e processa il documento
-        Suddividiamo il dataset in frasi da circa 250 token
-        Calcola gli embedding con SentenceTransformer
-        Li inserisce in un indice FAISS per la ricerca semantica
-        """
+        """Carica e processa il documento JSON"""
         try:
-            print(f"📖 Caricamento documento: {file_path}")
+            print(f"📖 Caricamento documento JSON: {file_path}")
             with open(file_path, "r", encoding="utf-8") as f:
-                text = f.read()
+                data = json.load(f)
 
-            cleaned = self.clean_text(text)
-            self.chunks = self.create_chunks(cleaned)
-
-            print(f"📄 Testo pulito: {len(cleaned)} caratteri")
-            print(f"✂️ Chunk creati: {len(self.chunks)}")
+            all_contents = []
+            
+            # Processa documents
+            for doc in data.get("documents", []):
+                content = self.clean_text(doc["content"])
+                enhanced_content = f"{doc['title']}. {content} Keywords: {', '.join(doc['keywords'])}"
+                all_contents.append({
+                    "content": enhanced_content,
+                    "metadata": {
+                        "id": doc["id"],
+                        "category": doc["category"],
+                        "title": doc["title"],
+                        "type": "document"
+                    }
+                })
+            
+            # Processa FAQ
+            for faq in data.get("faq", []):
+                enhanced_content = f"Domanda: {faq['question']} Risposta: {faq['answer']}"
+                all_contents.append({
+                    "content": enhanced_content,
+                    "metadata": {
+                        "id": faq["id"],
+                        "category": faq["category"],
+                        "type": "faq"
+                    }
+                })
+            
+            print(f"📄 Documenti caricati: {len(data.get('documents', []))}")
+            print(f"❓ FAQ caricate: {len(data.get('faq', []))}")
+            
+            # Crea chunks dai contenuti
+            self.chunks = []
+            self.chunk_metadata = []
+            
+            for item in all_contents:
+                content_chunks = self.create_chunks(item["content"])
+                for chunk in content_chunks:
+                    self.chunks.append(chunk)
+                    self.chunk_metadata.append(item["metadata"])
+            
+            print(f"✂️ Chunk totali creati: {len(self.chunks)}")
 
             # Crea embeddings e indice
             print("🧠 Creazione embeddings...")
@@ -60,7 +81,7 @@ class ChatbotRAGSystem:
             return True
 
         except Exception as e:
-            print(f"❌ Errore nel caricamento: {e}")
+            print(f"❌ Errore nel caricamento JSON: {e}")
             return False
 
     def clean_text(self, text):
@@ -69,31 +90,26 @@ class ChatbotRAGSystem:
         text = re.sub(r'\s+', ' ', text)
         return text.strip()
 
-    def create_chunks(self, text):
+    def create_chunks(self, text, max_length=300):
+        """Crea chunks più intelligenti dal testo"""
         sentences = re.split(r'(?<=[.!?])\s+', text)
         chunks = []
-        current = ""
-
+        current_chunk = ""
+        
         for sentence in sentences:
-            if len(current + sentence) > 250 and current:
-                chunks.append(current.strip())
-                current = sentence
+            if len(current_chunk) + len(sentence) > max_length and current_chunk:
+                chunks.append(current_chunk.strip())
+                current_chunk = sentence
             else:
-                current += " " + sentence if current else sentence
-        if current:
-            chunks.append(current.strip())
+                current_chunk += " " + sentence if current_chunk else sentence
+        
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+        
         return chunks
 
-    def get_chatbot_context(self, query, k=3):
-        """Ricerca ottimizzata per chatbot
-        Quando l’utente fa una domanda, questa funzione:
-        Calcola l’embedding della query;
-        Fa una ricerca nell’indice FAISS;
-        Recupera i chunk di testo più rilevanti;
-        Li unisce in un “contesto” che verrà passato al modello LLM.
-        Quindi: se l’utente chiede “Come faccio a disdire un pasto?”,
-        il sistema recupera i paragrafi di test.txt che parlano di disdette pasti.
-        """
+    def get_chatbot_context(self, query, k=4):
+        """Ricerca ottimizzata con metadati"""
         if not self.index_loaded:
             return ""
 
@@ -101,23 +117,48 @@ class ChatbotRAGSystem:
         scores, idxs = self.index.search(emb.astype("float32"), k)
 
         relevant_chunks = []
+        used_categories = set()
+        
         for s, i in zip(scores[0], idxs[0]):
-            if s > 0.3:  # Soglia bilanciata per precisione
-                relevant_chunks.append(self.chunks[i])
+            if s > 0.25:
+                chunk_text = self.chunks[i]
+                metadata = self.chunk_metadata[i]
+                
+                if metadata["type"] == "faq":
+                    chunk_with_source = f"[FAQ - {metadata['category']}] {chunk_text}"
+                else:
+                    chunk_with_source = f"[{metadata['title']} - {metadata['category']}] {chunk_text}"
+                
+                relevant_chunks.append(chunk_with_source)
+                used_categories.add(metadata["category"])
+        
+        if relevant_chunks:
+            print(f"🔍 Categorie trovate: {', '.join(used_categories)}")
+        
+        return "\n".join(relevant_chunks) if relevant_chunks else ""
 
-        return " ".join(relevant_chunks) if relevant_chunks else ""
+    def get_suggested_questions(self, query, k=3):
+        """Suggerisce domande correlate basate sulla similarità"""
+        if not self.index_loaded:
+            return []
+        
+        emb = self.model.encode([query], normalize_embeddings=True)
+        scores, idxs = self.index.search(emb.astype("float32"), k)
+        
+        suggestions = []
+        for s, i in zip(scores[0], idxs[0]):
+            if s > 0.3 and self.chunk_metadata[i]["type"] == "document":
+                metadata = self.chunk_metadata[i]
+                suggestions.append(f"{metadata['title']} ({metadata['category']})")
+        
+        return suggestions[:3]
 
-# ==================== CHATBOT NATURALE ====================
-"""
-Questa parte gestisce la conversazione vera e propria, usando Ollama come modello di linguaggio.
-
-"""
+# ==================== CHATBOT NATURALE CORRETTO ====================
 class NaturalChatbot:
-    def __init__(self, model="mistral"):
+    def __init__(self, model="llama3.2:1b"):  # Usa il modello che hai
         self.model = model
         self.base_url = "http://localhost:11434"
-        self.generate_url = f"{self.base_url}/api/generate"
-        self.chat_url = f"{self.base_url}/api/chat"
+        self.generate_url = f"{self.base_url}/api/generate"  # Endpoint corretto
         self.conversation_history = []
 
     def check_connection(self):
@@ -129,51 +170,48 @@ class NaturalChatbot:
             return False
 
     def natural_chat(self, message, context=""):
-        """Chat naturale e conversazionale
-        Crea una conversazione strutturata in stile chat:
-        aggiunge un prompt di sistema (“Sei un assistente amichevole del portale eCivis…”);
-        include la storia recente della conversazione;
-        aggiunge la domanda dell’utente + eventuale contesto RAG;
-        invia tutto all’API /api/chat di Ollama;
-        riceve e stampa la risposta generata dal modello.
-        Il tono è naturale, amichevole e coerente con le informazioni di eCivis.
-        """
-        # Prepara il contesto della conversazione
-        messages = []
-        # System prompt per un chatbot naturale
-        system_prompt = """Sei un assistente amichevole e utile del portale eCivis.
-        Rispondi in modo NATURALE e CONVERSAZIONALE, come se stessi parlando con un utente.
-        Usa un tono amichevole ma professionale.
-        Se hai informazioni dal contesto, usale per rispondere in modo preciso.
-        Se non hai informazioni sufficienti, sii onesto ma mantieni un tono utile.
-        Usa frasi brevi e un linguaggio semplice."""
-        messages.append({"role": "system", "content": system_prompt})
-        # Aggiungi history della conversazione (ultime 4 scambi)
-        messages.extend(self.conversation_history[-8:])
-        # Costruisci il messaggio finale con contesto se disponibile
-        user_message = message
-        if context:
-            user_message = f"Contesto sul portale eCivis: {context}\n\nDomanda dell'utente: {message}"
+        """Chat usando l'endpoint generate (corretto)"""
+        # Costruisci il prompt completo per l'endpoint generate
+        system_prompt = """Sei un assistente esperto del portale eCivisWeb. 
+Usa le informazioni dal contesto fornito per rispondere in modo preciso.
+Se non hai informazioni sufficienti nel contesto, sii onesto.
+Mantieni un tono amichevole ma professionale.
+Organizza le risposte in modo chiaro quando possibile."""
 
-        messages.append({"role": "user", "content": user_message})
+        # Prepara il prompt completo per l'endpoint generate
+        full_prompt = f"Sistema: {system_prompt}\n\n"
+        
+        if context:
+            full_prompt += f"CONTESTO:\n{context}\n\n"
+        
+        # Aggiungi history della conversazione
+        if self.conversation_history:
+            full_prompt += "STORIA CONVERSAZIONE:\n"
+            for msg in self.conversation_history[-4:]:  # Ultimi 4 messaggi
+                role = "Utente" if msg["role"] == "user" else "Assistente"
+                full_prompt += f"{role}: {msg['content']}\n"
+            full_prompt += "\n"
+        
+        full_prompt += f"Utente: {message}\n\nAssistente:"
 
         payload = {
             "model": self.model,
-            "messages": messages,
+            "prompt": full_prompt,
             "stream": False,
             "options": {
-                "temperature": 0.7,  # Più creatività per conversazioni naturali
+                "temperature": 0.7,
                 "top_p": 0.9,
-                "num_predict": 400,  # Risposte concise ma complete
+                "num_predict": 350,  # Lunghezza risposta
                 "repeat_penalty": 1.1
             }
         }
 
         try:
-            response = requests.post(self.chat_url, json=payload, timeout=20)
+            print("🔄 Invio a Ollama...")
+            response = requests.post(self.generate_url, json=payload, timeout=30)
             response.raise_for_status()
             result = response.json()
-            bot_response = result["message"]["content"]
+            bot_response = result["response"].strip()
 
             # Aggiorna la storia della conversazione
             self.conversation_history.append({"role": "user", "content": message})
@@ -181,34 +219,38 @@ class NaturalChatbot:
 
             return bot_response
 
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Errore di rete: {e}")
+            return "Mi dispiace, ho problemi di connessione con il servizio. Riprova tra un momento."
         except Exception as e:
-            return f"Mi dispiace, ho avuto un problema tecnico. Potresti ripetere? ({e})"
+            print(f"❌ Errore generico: {e}")
+            return "Mi dispiace, ho avuto un problema tecnico. Potresti ripetere?"
 
     def get_quick_response(self, query, context=""):
         """Risposta rapida per domande semplici"""
         quick_responses = {
-            'ciao': 'Ciao! 😊 Come posso aiutarti con il portale eCivis oggi?',
-            'salve': 'Salve! Sono qui per assisterti con il portale eCivis.',
-            'buongiorno': 'Buongiorno! 🌞 Come posso esserti utile?',
-            'buonasera': 'Buonasera! Sono a disposizione per informazioni sul portale.',
-            'grazie': 'Di nulla! Se hai altre domande, sono qui! 👍',
+            'ciao': 'Ciao! 😊 Sono il tuo assistente per il portale eCivisWeb. Come posso aiutarti?',
+            'salve': 'Salve! Sono qui per assisterti con il portale eCivisWeb.',
+            'buongiorno': 'Buongiorno! 🌞 Come posso esserti utile con i servizi eCivis?',
+            'buonasera': 'Buonasera! Sono a disposizione per informazioni sul portale eCivis.',
+            'grazie': 'Di nulla! Se hai altre domande sui servizi eCivis, sono qui! 👍',
             'grazie mille': 'Figurati! Felice di esserti stato utile! 😊',
-            'arrivederci': 'Arrivederci! 👋 Torna pure quando vuoi!',
-            'aiuto': 'Certamente! Posso aiutarti con: accesso al portale, pagamenti, prenotazioni, moduli e molto altro. Cosa ti serve?'
+            'arrivederci': 'Arrivederci! 👋 Torna pure quando hai bisogno di aiuto con eCivis!',
+            'aiuto': 'Certamente! Posso aiutarti con: accesso al portale, pagamenti, prenotazioni mensa, moduli online e molto altro. Cosa ti serve?'
         }
+
         query_lower = query.lower().strip()
         for key, response in quick_responses.items():
             if key in query_lower:
                 return response
+
         return None
+
     def clear_history(self):
         """Pulisce la storia della conversazione"""
         self.conversation_history = []
 
 # ==================== SISTEMA CHATBOT PRINCIPALE ====================
-"""
-Inizializza sia il motore RAG che il modello Ollama. Gestisce la conversazione. Collega le varie componenti.
-"""
 class ChatbotSystem:
     def __init__(self):
         self.rag = ChatbotRAGSystem()
@@ -218,7 +260,7 @@ class ChatbotSystem:
 
     def setup(self):
         """Setup completo del sistema"""
-        print("🔧 Configurazione chatbot...")
+        print("🔧 Configurazione chatbot eCivis...")
 
         if not self.rag.load_document(DOCUMENT_PATH):
             return False
@@ -228,29 +270,38 @@ class ChatbotSystem:
             return False
 
         self.setup_complete = True
-        print("✅ CHATBOT PRONTO!")
+        print("✅ CHATBOT eCivis PRONTO!")
         return True
 
     def process_message(self, user_input):
         """Elabora un messaggio in modo naturale"""
         if not self.setup_complete:
             return "Il sistema non è pronto, riprova tra un momento."
+
         # 1. Controlla se è una risposta rapida predefinita
         quick_response = self.chatbot.get_quick_response(user_input)
         if quick_response:
             return quick_response
+
         # 2. Estrai il nome se è un saluto personale
         if not self.user_name:
             name_match = re.search(r'(?:mi chiamo|sono|il mio nome è)\s+([^.?!]*)', user_input.lower())
             if name_match:
                 self.user_name = name_match.group(1).strip().title()
-                return f"Piacere di conoscerti, {self.user_name}! 😊 Come posso aiutarti con il portale eCivis?"
+                return f"Piacere di conoscerti, {self.user_name}! 😊 Come posso aiutarti con il portale eCivisWeb?"
 
         # 3. Cerca contesto rilevante
         context = self.rag.get_chatbot_context(user_input)
+        
+        # 4. Ottieni suggerimenti per domande correlate
+        suggestions = self.rag.get_suggested_questions(user_input)
 
-        # 4. Genera risposta naturale
+        # 5. Genera risposta naturale
         response = self.chatbot.natural_chat(user_input, context)
+        
+        # 6. Aggiungi suggerimenti se disponibili
+        if suggestions and "non ho informazioni" not in response.lower() and "non so" not in response.lower():
+            response += f"\n\n💡 **Potresti anche chiedere:**\n" + "\n".join([f"• {s}" for s in suggestions])
 
         return response
 
@@ -260,18 +311,20 @@ def natural_chat_interface():
     system = ChatbotSystem()
 
     if not system.setup():
+        print("❌ Impossibile avviare il chatbot. Controlla la connessione Ollama.")
         return
 
     print("\n" + "="*50)
-    print("🤖 ASSISTENTE VIRTUALE eCivis")
+    print("🤖 ASSISTENTE VIRTUALE eCivisWeb")
     print("="*50)
-    print("Ciao! Sono il tuo assistente per il portale eCivis.")
+    print("Ciao! Sono il tuo assistente specializzato sul portale eCivisWeb.")
     print("Posso aiutarti con:")
-    print("  • Accesso e login al portale")
-    print("  • Pagamenti e ricariche")
-    print("  • Prenotazioni mensa")
-    print("  • Moduli online")
-    print("  • E molto altro!")
+    print("  • Accesso e autenticazione (SPID/CIE)")
+    print("  • Gestione utenti e nucleo familiare")
+    print("  • Pagamenti e ricariche mensa")
+    print("  • Prenotazioni e disdette pasti")
+    print("  • Moduli online e bandi")
+    print("  • Comunicazioni e documenti")
     print("\nScrivi pure la tua domanda...")
     print("="*50)
 
@@ -285,7 +338,7 @@ def natural_chat_interface():
                 continue
 
             if user_input.lower() in ['/exit', 'esci', 'arrivederci', 'ciao']:
-                farewell = "Arrivederci! 👋 Torna pure quando hai bisogno di aiuto!"
+                farewell = "Arrivederci! 👋 Torna pure quando hai bisogno di aiuto con eCivis!"
                 if system.user_name:
                     farewell = f"Arrivederci, {system.user_name}! 👋 Alla prossima!"
                 print(f"\n🤖 {farewell}")
@@ -297,22 +350,28 @@ def natural_chat_interface():
                 continue
 
             if user_input.lower() == '/help':
-                print("\n🤖 💡 **Come posso aiutarti:**")
-                print("• 'Come accedo al portale?'")
-                print("• 'Quali metodi di pagamento ci sono?'")
-                print("• 'Come disdire un pasto?'")
-                print("• 'Posso modificare un modulo inviato?'")
+                print("\n🤖 💡 **Come posso aiutarti con eCivis:**")
+                print("• 'Come accedo con SPID?'")
+                print("• 'Come ricarico il conto mensa?'")
+                print("• 'Come disdico un pasto?'")
+                print("• 'Dove trovo le comunicazioni?'")
+                print("• 'Come presento un modulo online?'")
                 print("• 'Mi chiamo Marco' → Personalizza le risposte")
                 print("• '/clear' → Resetta la conversazione")
                 print("• 'Grazie' → Risposta cortese")
+                print("• '/stats' → Mostra statistiche")
+                continue
+
+            if user_input.lower() == '/stats':
+                print(f"\n📊 **Statistiche:**")
+                print(f"• Nome utente: {system.user_name or 'Non specificato'}")
+                print(f"• Messaggi in history: {len(system.chatbot.conversation_history)}")
+                print(f"• Chunk nel sistema: {len(system.rag.chunks)}")
                 continue
 
             # Processa il messaggio
             message_count += 1
-            if message_count == 1:
-                print("🤖 ", end="", flush=True)
-            else:
-                print("\n🤖 ", end="", flush=True)
+            print("🤖 ", end="", flush=True)
 
             start_time = time.time()
             response = system.process_message(user_input)
@@ -320,36 +379,15 @@ def natural_chat_interface():
 
             print(response)
 
-            # Mostra tempo di risposta solo se > 2 secondi
-            if response_time > 2:
-                print(f"   ⏱️  ({response_time:.1f}s)")
+            # Mostra tempo di risposta
+            print(f"   ⏱️  ({response_time:.1f}s)")
 
         except KeyboardInterrupt:
-            print("\n\n🤖 Arrivederci! Spero di esserti stato utile! 👋")
+            print("\n\n🤖 Arrivederci! Spero di esserti stato utile con eCivis! 👋")
             break
         except Exception as e:
-            print(f"\n🤖 ❌ Ops, qualcosa è andato storto. Riprova! ({e})")
+            print(f"\n🤖 ❌ Ops, qualcosa è andato storto: {e}")
 
 # ==================== ESECUZIONE PRINCIPALE ====================
 if __name__ == "__main__":
     natural_chat_interface()
-"""
-Limiti da affrontare:
-1. Limiti del motore RAG
-  Chunking statico
-  No aggiornamento dinamico
-  Ricerca basata su similarità semplice
-  Limiti della conversazione con Ollama
-2. Limiti della conversazione con Ollama
-  Connessione locale
-  Contesto limitato -> solo 4 interazioni costruiscono una conversazione [mantenere un buffer di contesto più ampio o usare un summary rolling context (riassunto progressivo della chat).]
-  Nessuna memoria persistente -> perdo history of the chatbot each system restart.
-3. Limiti tecnici
-  Embedding con all-MiniLM-L6-v2
-  FAISS in memoria
-  Blocco sincrono
-4. Limiti di generazione (LLM)
-  Hallucination Se il RAG non trova un contesto chiaro, il modello potrebbe inventare risposte (“hallucinate”)-> Soluzione: includere nel prompt: “Se non hai informazioni sufficienti, rispondi ‘Non lo so con certezza.’”
-  Stile troppo generalista
-  Anche con il system prompt, mistral non ha memoria “long-term” né un tono coerente per tutto il dialogo. -> Soluzione: usare un modello più fine-tuned
-"""
