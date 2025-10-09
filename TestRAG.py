@@ -1,3 +1,48 @@
+"""
+Spieghiamo il RAG
+RAG = Retrieval-Augmented Generation e lo dividiamo in 2 fasi:
+1. Retrieval (recupero): trova i testi più rilevanti nel tuo database o documenti (es. manuali e FAQ in test.json).
+2. Generation (generazione): passa quei testi al modello LLM (qui llama3.2:1b via Ollama) per creare una risposta naturale e coerente.
+EnhancedRAGSystem gestisce il recupero dei documenti che sarebbero dei json ben strutturati. Ciascuno di essi viene suddiviso in chuncks
+e convertito in embedding vettoriale. Al ternine memorizzato dentro un indice vettoriale FAISS.
+BISONA MIGLIORARE IL RAG come ?
+suggerimenti:
+1. metadati dentro i documenti json, da dare al LLM come contesto che non li sto usando
+2. allungare chuck a 400-600 parole per prendere più frasi per embedding
+3. Aggiungi un piccolo "overlap" tra chunk per evitare tagli improvvisi di frasi
+4. La soglia fissa s > 0.25 va bene, ma puoi migliorarla:
+   Alza se i risultati sono troppi o poco precisi.
+   Abbassala se il contesto è vuoto troppo spesso.
+   Puoi anche renderla dinamica in base al tipo di query:
+        threshold = 0.25 if query_analysis['complexity'] == 'high' else 0.35
+//-----------------------------------------------------------------------------//
+//-----------------------------------------------------------------------------//
+Altro tipo di embadding
+{
+  "documents": [
+    {
+      "id": "doc_001",
+      "title": "Accesso al portale eCivis",
+      "category": "Accesso e autenticazione",
+      "content": "Per accedere al portale eCivisWeb è necessario utilizzare SPID o CIE...",
+      "keywords": ["login", "SPID", "CIE", "autenticazione", "portale"],
+      "questions": [
+        "Come accedo al portale eCivis?",
+        "Posso entrare con la carta d'identità elettronica?"
+      ]
+    }
+  ],
+  "faq": [
+    {
+      "id": "faq_001",
+      "category": "Pagamenti",
+      "question": "Come posso ricaricare il credito mensa?",
+      "answer": "Puoi ricaricare il credito mensa accedendo alla sezione Pagamenti dal portale..."
+    }
+  ]
+}
+
+"""
 from sentence_transformers import SentenceTransformer
 import faiss, re
 import requests
