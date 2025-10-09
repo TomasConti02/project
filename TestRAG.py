@@ -17,31 +17,6 @@ suggerimenti:
         threshold = 0.25 if query_analysis['complexity'] == 'high' else 0.35
 //-----------------------------------------------------------------------------//
 //-----------------------------------------------------------------------------//
-Altro tipo di embadding
-{
-  "documents": [
-    {
-      "id": "doc_001",
-      "title": "Accesso al portale eCivis",
-      "category": "Accesso e autenticazione",
-      "content": "Per accedere al portale eCivisWeb è necessario utilizzare SPID o CIE...",
-      "keywords": ["login", "SPID", "CIE", "autenticazione", "portale"],
-      "questions": [
-        "Come accedo al portale eCivis?",
-        "Posso entrare con la carta d'identità elettronica?"
-      ]
-    }
-  ],
-  "faq": [
-    {
-      "id": "faq_001",
-      "category": "Pagamenti",
-      "question": "Come posso ricaricare il credito mensa?",
-      "answer": "Puoi ricaricare il credito mensa accedendo alla sezione Pagamenti dal portale..."
-    }
-  ]
-}
-
 """
 from sentence_transformers import SentenceTransformer
 import faiss, re
